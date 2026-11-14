@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aquarium Monitor - Guppy IoT</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+
+  <div class="max-w-4xl mx-auto p-6">
+    <!-- Header -->
+    <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-800 pb-4 mb-6 gap-3">
+      <div>
+        <h1 class="text-2xl font-bold text-cyan-400">Aquarium IoT Monitor</h1>
+        <p class="text-sm text-slate-400">Sistem Monitoring & Rule-Based Akuarium Ikan Guppy</p>
+      </div>
+      <div id="conn-badge" class="px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+        Menghubungkan ke Cloud...
+      </div>
+    </header>
+
+    <!-- Kartu Sensor Real-time -->
+    <section class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+      <!-- Suhu Air -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg">
+        <div class="flex justify-between items-center mb-2">
+          <span class="text-sm font-medium text-slate-400">Suhu Air (DS18B20)</span>
+          <span id="batas-aktif" class="text-xs bg-slate-800 text-cyan-300 px-2.5 py-1 rounded-md">
+            Batas: -- °C
+          </span>
+        </div>
+        <div class="text-5xl font-extrabold text-white my-3">
+          <span id="nilai-suhu">--.--</span><span class="text-2xl text-slate-400"> °C</span>
+        </div>
+        <div id="badge-status" class="inline-block px-3 py-1 rounded-lg text-sm font-semibold bg-slate-800 text-slate-300">
+          Menunggu data...
+        </div>
+      </div>
+
+      <!-- Panel Rekomendasi Aksi (Rule-Based System) -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg flex flex-col justify-between">
+        <div>
+          <h2 class="text-sm font-medium text-slate-400 mb-2">Rekomendasi Aksi (Rule-Based)</h2>
+          <p id="rekomendasi-teks" class="text-lg font-semibold text-slate-200 leading-relaxed">
+            Sedang memuat evaluasi kondisi air...
+          </p>
+        </div>
+        <p class="text-xs text-slate-500 mt-4">
+          *Status & batas parameter tersinkronisasi otomatis dengan memori NVS ESP32.
+        </p>
+      </div>
+    </section>
+
+    <!-- Form Kustomisasi Baku Mutu -->
+    <section class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg">
+      <div class="mb-4">
+        <h2 class="text-lg font-bold text-white">Kustomisasi Baku Mutu Parameter</h2>
+        <p class="text-xs text-slate-400">Ubah ambang batas ideal. Perubahan akan disimpan ke Cloud dan disinkronkan ke ESP32 dalam ±5 detik.</p>
+      </div>
+
+      <form id="config-form" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">Batas Bawah Suhu Ideal (°C)</label>
+          <input type="number" step="0.1" id="input-suhu-min" required
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-400" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">Batas Atas Suhu Ideal (°C)</label>
+          <input type="number" step="0.1" id="input-suhu-max" required
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-cyan-400" />
+        </div>
+
+        <div class="sm:col-span-2 flex items-center justify-between pt-2">
+          <span id="save-feedback" class="text-xs text-emerald-400 hidden">✓ Baku mutu berhasil diperbarui & dikirim ke ESP32!</span>
+          <button type="submit"
+            class="ml-auto bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-5 py-2.5 rounded-lg transition cursor-pointer">
+            Simpan Perubahan
+          </button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <!-- Firebase Modular SDK -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+    import { getDatabase, ref, onValue, update } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
+
+    // GANTI DENGAN CONFIG MILIK PROJECT FIREBASE KAMU
+    const firebaseConfig = {
+      apiKey: "AIzaSyDiebfgdgOHNO4ox2TQgaXs9zJLH90_iX8",
+      authDomain: "aquarium-monitor-guppy.firebaseapp.com",
+      databaseURL: "https://aquarium-monitor-guppy-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "aquarium-monitor-guppy",
+      storageBucket: "aquarium-monitor-guppy.firebasestorage.app",
+      messagingSenderId: "528779591056",
+      appId: "1:528779591056:web:64ce8cf13f24357f7ac715",
+      measurementId: "G-6PSWRBNPF2"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    let currentConfig = { suhu_min: 25.0, suhu_max: 28.0 };
+    let latestSuhu = null;
+
+    // 1. Dengarkan perubahan /config secara real-time
+    onValue(ref(db, "config"), (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        currentConfig.suhu_min = parseFloat(data.suhu_min ?? 25.0);
+        currentConfig.suhu_max = parseFloat(data.suhu_max ?? 28.0);
+
+        document.getElementById("input-suhu-min").value = currentConfig.suhu_min;
+        document.getElementById("input-suhu-max").value = currentConfig.suhu_max;
+        document.getElementById("batas-aktif").textContent = `Batas: ${currentConfig.suhu_min} - ${currentConfig.suhu_max} °C`;
+
+        if (latestSuhu !== null) evaluasiTampilan(latestSuhu);
+      }
+    });
+
+    // 2. Dengarkan data /sensor secara real-time (tiap 1 detik dari ESP32)
+    onValue(ref(db, "sensor"), (snapshot) => {
+      const badge = document.getElementById("conn-badge");
+      badge.textContent = "Cloud Terhubung (Real-time)";
+      badge.className = "px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
+
+      const data = snapshot.val();
+      if (data && data.suhu !== undefined) {
+        latestSuhu = parseFloat(data.suhu);
+        document.getElementById("nilai-suhu").textContent = latestSuhu.toFixed(2);
+        evaluasiTampilan(latestSuhu);
+      }
+    });
+
+    // 3. Evaluasi Rule-Based System di UI
+    function evaluasiTampilan(suhu) {
+      const statusBadge = document.getElementById("badge-status");
+      const rekTeks = document.getElementById("rekomendasi-teks");
+
+      if (suhu < currentConfig.suhu_min) {
+        statusBadge.textContent = "DINGIN (Di bawah batas)";
+        statusBadge.className = "inline-block px-3 py-1 rounded-lg text-sm font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/40";
+        rekTeks.textContent = `Suhu air (${suhu.toFixed(1)}°C) terlalu dingin untuk guppy. Nyalakan heater akuarium secara bertahap hingga mencapai ${currentConfig.suhu_min}°C.`;
+      } else if (suhu > currentConfig.suhu_max) {
+        statusBadge.textContent = "PANAS (Melewati batas)";
+        statusBadge.className = "inline-block px-3 py-1 rounded-lg text-sm font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/40";
+        rekTeks.textContent = `Suhu air (${suhu.toFixed(1)}°C) terlalu panas. Nyalakan kipas pendingin permukaan atau kurangi pencahayaan lampu akuarium.`;
+      } else {
+        statusBadge.textContent = "IDEAL";
+        statusBadge.className = "inline-block px-3 py-1 rounded-lg text-sm font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
+        rekTeks.textContent = "Kondisi suhu air optimal untuk metabolisme dan kesehatan ikan guppy. Tidak diperlukan tindakan korektif.";
+      }
+    }
+
+    // 4. Simpan kustomisasi baku mutu dari form ke Firebase
+    document.getElementById("config-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const newMin = parseFloat(document.getElementById("input-suhu-min").value);
+      const newMax = parseFloat(document.getElementById("input-suhu-max").value);
+
+      if (newMin >= newMax) {
+        alert("Batas bawah suhu harus lebih kecil dari batas atas!");
+        return;
+      }
+
+      await update(ref(db, "config"), {
+        suhu_min: newMin,
+        suhu_max: newMax
+      });
+
+      const feedback = document.getElementById("save-feedback");
+      feedback.classList.remove("hidden");
+      setTimeout(() => feedback.classList.add("hidden"), 4000);
+    });
+  </script>
+</body>
+</html>
