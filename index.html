@@ -3,330 +3,582 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Aquarium IoT Monitor & Simulator - Guppy</title>
+  <title>Guppy Aqua Monitor — IoT Water Quality & Rule-Based System</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; background-color: #0b1120; color: #e2e8f0; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .glass-card {
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(51, 65, 85, 0.7);
+      backdrop-filter: blur(12px);
+    }
+    input[type="range"] { accent-color: #38bdf8; }
+  </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen font-sans pb-12">
+<body class="min-h-screen pb-12">
 
-  <div class="max-w-5xl mx-auto p-6">
-    <!-- Header -->
-    <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-800 pb-4 mb-6 gap-3">
-      <div>
-        <h1 class="text-2xl font-bold text-cyan-400">Aquarium IoT Monitor</h1>
-        <p class="text-sm text-slate-400">Deteksi Dini Perawatan Akuarium Ikan Guppy (Rule-Based R1–R10)</p>
+  <!-- TOP NAVBAR -->
+  <header class="border-b border-slate-800 bg-slate-950/80 sticky top-0 z-30 backdrop-blur">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-sky-500/15 border border-sky-400/30 flex items-center justify-center text-sky-400">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight text-white">Guppy Aqua Monitor</h1>
+          <p class="text-xs text-slate-400">Hybrid Edge-Cloud IoT & Rule-Based Water Quality System</p>
+        </div>
       </div>
-      <div id="conn-badge" class="px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40">
-        Menghubungkan ke Cloud...
-      </div>
-    </header>
 
-    <!-- 3 Kartu Monitoring Sensor -->
-    <section class="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
-      <!-- Suhu -->
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
-        <div class="flex justify-between items-center mb-1">
+      <div class="flex items-center gap-3 flex-wrap">
+        <!-- Status MOSFET pH -->
+        <div id="mosfetBadge" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/90 border border-slate-700 text-slate-300 flex items-center gap-2">
+          <span id="mosfetDot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+          <span id="mosfetText">pH MOSFET: Memuat...</span>
+        </div>
+
+        <!-- Status Koneksi ESP32 -->
+        <div id="connBadge" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/10 border border-amber-500/30 text-amber-300 flex items-center gap-2">
+          <span id="connDot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+          <span id="connText">Menghubungkan Firebase...</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
+
+    <!-- BANNER EVALUASI RULE-BASED SYSTEM (R1 - R10) -->
+    <section id="evalBanner" class="glass-card rounded-2xl p-5 border-l-4 border-l-emerald-500 transition-all">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div class="space-y-1.5">
+          <div class="flex items-center gap-2.5 flex-wrap">
+            <span id="evalStatusBadge" class="px-2.5 py-0.5 rounded-md text-xs font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              MEMUAT STATUS
+            </span>
+            <span class="text-xs text-slate-400">Rule Aktif:</span>
+            <span id="evalRules" class="mono text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-sky-300 border border-slate-700">
+              -
+            </span>
+          </div>
+          <p id="evalRekomendasi" class="text-sm text-slate-200 leading-relaxed">
+            Menunggu sinkronisasi data sensor dari ESP32...
+          </p>
+        </div>
+        <div class="text-right shrink-0">
+          <p class="text-[11px] uppercase tracking-wider text-slate-500">Pembaruan Terakhir</p>
+          <p id="lastUpdateText" class="mono text-xs text-slate-300 mt-0.5">--:--:--</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- KARTU TELEMETRI 3 SENSOR UTAMA -->
+    <section class="grid grid-cols-1 md:grid-cols-3 gap-5">
+      <!-- KARTU SUHU -->
+      <div class="glass-card rounded-2xl p-5 relative overflow-hidden">
+        <div class="flex items-center justify-between">
           <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Suhu Air</span>
-          <span id="tag-sumber-suhu" class="text-[11px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded">DS18B20</span>
+          <span id="suhuSourceBadge" class="mono text-[11px] px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">
+            DS18B20
+          </span>
         </div>
-        <div class="text-4xl font-extrabold text-white my-2">
-          <span id="val-suhu">--.--</span><span class="text-lg text-slate-400"> °C</span>
+        <div class="mt-4 flex items-baseline gap-2">
+          <span id="valSuhu" class="mono text-4xl font-bold text-white">--.-</span>
+          <span class="text-lg font-medium text-slate-400">°C</span>
         </div>
-        <div id="range-suhu" class="text-xs text-slate-400">Baku Mutu: 25.0 – 28.0 °C</div>
+        <div class="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+          <span>Baku Mutu Guppy</span>
+          <span id="rangeSuhuLabel" class="mono text-slate-300">25.0 - 28.0 °C</span>
+        </div>
       </div>
 
-      <!-- pH -->
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
-        <div class="flex justify-between items-center mb-1">
-          <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Derajat Keasaman</span>
-          <span id="tag-sumber-ph" class="text-[11px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded">VIRTUAL</span>
+      <!-- KARTU PH -->
+      <div class="glass-card rounded-2xl p-5 relative overflow-hidden">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Derajat Keasaman (pH)</span>
+          <span id="phSourceBadge" class="mono text-[11px] px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+            PH-4502C
+          </span>
         </div>
-        <div class="text-4xl font-extrabold text-white my-2">
-          <span id="val-ph">--.--</span><span class="text-lg text-slate-400"> pH</span>
+        <div class="mt-4 flex items-baseline gap-2">
+          <span id="valPh" class="mono text-4xl font-bold text-white">-.--</span>
+          <span class="text-sm font-medium text-slate-400">pH</span>
         </div>
-        <div id="range-ph" class="text-xs text-slate-400">Baku Mutu: 6.5 – 8.0 pH</div>
+        <div class="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+          <span>Baku Mutu Guppy</span>
+          <span id="rangePhLabel" class="mono text-slate-300">6.5 - 8.0 pH</span>
+        </div>
       </div>
 
-      <!-- Turbidity -->
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
-        <div class="flex justify-between items-center mb-1">
+      <!-- KARTU TURBIDITY -->
+      <div class="glass-card rounded-2xl p-5 relative overflow-hidden">
+        <div class="flex items-center justify-between">
           <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Kekeruhan Air</span>
-          <span id="tag-sumber-ntu" class="text-[11px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded">VIRTUAL</span>
+          <span id="ntuSourceBadge" class="mono text-[11px] px-2 py-0.5 rounded bg-teal-500/15 text-teal-300 border border-teal-500/30">
+            TSW-30
+          </span>
         </div>
-        <div class="text-4xl font-extrabold text-white my-2">
-          <span id="val-ntu">--.-</span><span class="text-lg text-slate-400"> NTU</span>
+        <div class="mt-4 flex items-baseline gap-2">
+          <span id="valNtu" class="mono text-4xl font-bold text-white">---</span>
+          <span class="text-sm font-medium text-slate-400">NTU</span>
         </div>
-        <div id="range-ntu" class="text-xs text-slate-400">Baku Mutu: ≤ 25 NTU</div>
+        <div class="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+          <span>Batas Maksimal</span>
+          <span id="rangeNtuLabel" class="mono text-slate-300">&lt; 25 NTU (+5/jam)</span>
+        </div>
       </div>
     </section>
 
-    <!-- Panel Output Rule-Based System (R1 - R10) -->
-    <section id="panel-rbs" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg mb-8 transition-colors">
-      <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-        <div class="flex items-center gap-2">
-          <span class="text-sm font-bold uppercase tracking-wider text-slate-300">Hasil Evaluasi Rule-Based</span>
-          <span id="badge-rules" class="text-xs font-mono bg-slate-800 text-cyan-300 px-2.5 py-1 rounded">Rules: --</span>
+    <!-- GRAFIK TREN REALTIME -->
+    <section class="glass-card rounded-2xl p-5">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <div>
+          <h2 class="text-sm font-bold text-white">Grafik Pemantauan Real-Time</h2>
+          <p class="text-xs text-slate-400">Riwayat 25 sampel terakhir selama sesi browser aktif</p>
         </div>
-        <span id="badge-status-utama" class="px-3 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-300">
-          Menunggu Evaluasi...
-        </span>
+        <button onclick="resetChart()" class="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
+          Reset Grafik
+        </button>
       </div>
-      <p id="teks-rekomendasi" class="text-base text-slate-200 leading-relaxed">
-        Menunggu data dari ESP32...
-      </p>
+      <div class="h-64 w-full">
+        <canvas id="telemetryChart"></canvas>
+      </div>
     </section>
 
-    <!-- Grid 2 Kolom: Kiri = Virtual Sensor Simulator, Kanan = Kustomisasi Baku Mutu -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- PANEL KONTROL: KONFIGURASI BAKU MUTU & VIRTUAL SENSOR SIMULATION -->
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-      <!-- PANEL 1: VIRTUAL ENVIRONMENT / SIMULATOR SENSOR -->
-      <section class="bg-slate-900 border border-purple-500/30 rounded-2xl p-6 shadow-lg">
-        <div class="flex items-center justify-between mb-4">
+      <!-- 1. KONFIGURASI AMBANG BATAS (SYNC KE NVS ESP32) -->
+      <div class="glass-card rounded-2xl p-6 space-y-5">
+        <div class="flex items-start justify-between gap-2">
           <div>
-            <h2 class="text-lg font-bold text-purple-300">Virtual Sensor Environment</h2>
-            <p class="text-xs text-slate-400">Simulasikan nilai sensor ke ESP32 untuk pengujian Rule R1–R10.</p>
+            <h2 class="text-base font-bold text-white">Standar Baku Mutu Air (NVS Sync)</h2>
+            <p class="text-xs text-slate-400 mt-0.5">Perubahan otomatis disinkronkan ke memori NVS ESP32 dalam 3 detik.</p>
           </div>
+          <button onclick="resetDefaultConfig()" class="text-xs px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700">
+            Default Guppy
+          </button>
         </div>
 
-        <div class="space-y-5">
-          <!-- Simulasi Suhu (Bisa Toggle Fisik DS18B20 vs Virtual) -->
-          <div class="bg-slate-950/70 p-4 rounded-xl border border-slate-800">
-            <div class="flex items-center justify-between mb-2">
-              <label class="text-xs font-semibold text-slate-300">Sumber Data Suhu</label>
-              <label class="inline-flex items-center gap-2 cursor-pointer text-xs text-purple-300">
-                <input type="checkbox" id="sim-override-suhu" class="accent-purple-500 w-4 h-4" />
-                <span>Override Suhu (Virtual)</span>
-              </label>
+        <form id="configForm" onsubmit="saveConfig(event)" class="space-y-4">
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Suhu Minimum (°C)</label>
+              <input type="number" step="0.1" id="cfgSuhuMin" required
+                class="mono w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white focus:outline-none focus:border-sky-400">
             </div>
-            <div id="box-slider-suhu" class="opacity-40 pointer-events-none transition-opacity">
-              <div class="flex justify-between text-xs text-slate-400 mb-1">
-                <span>Simulasi Suhu:</span>
-                <span class="font-bold text-white"><span id="lbl-sim-suhu">26.5</span> °C</span>
-              </div>
-              <input type="range" id="sim-suhu" min="18" max="35" step="0.1" value="26.5" class="w-full accent-purple-500" />
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Suhu Maksimum (°C)</label>
+              <input type="number" step="0.1" id="cfgSuhuMax" required
+                class="mono w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white focus:outline-none focus:border-sky-400">
             </div>
           </div>
 
-          <!-- Simulasi pH -->
-          <div class="bg-slate-950/70 p-4 rounded-xl border border-slate-800">
-            <div class="flex justify-between text-xs text-slate-300 mb-1">
-              <span>Simulasi Sensor pH (PH-4502C):</span>
-              <span class="font-bold text-white"><span id="lbl-sim-ph">7.2</span> pH</span>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">pH Minimum</label>
+              <input type="number" step="0.1" id="cfgPhMin" required
+                class="mono w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white focus:outline-none focus:border-sky-400">
             </div>
-            <input type="range" id="sim-ph" min="4.0" max="10.0" step="0.1" value="7.2" class="w-full accent-purple-500" />
-            <div class="flex justify-between text-[10px] text-slate-500 mt-1">
-              <span>Asam (4.0)</span><span>Ideal (6.5–8.0)</span><span>Basa (10.0)</span>
-            </div>
-          </div>
-
-          <!-- Simulasi Turbidity & Tren R9 -->
-          <div class="bg-slate-950/70 p-4 rounded-xl border border-slate-800">
-            <div class="flex justify-between text-xs text-slate-300 mb-1">
-              <span>Simulasi Kekeruhan (Turbidity):</span>
-              <span class="font-bold text-white"><span id="lbl-sim-ntu">12</span> NTU</span>
-            </div>
-            <input type="range" id="sim-ntu" min="0" max="60" step="1" value="12" class="w-full accent-purple-500" />
-            <div class="mt-3 pt-2 border-t border-slate-800 flex items-center justify-between">
-              <span class="text-xs text-slate-400">Simulasi Lonjakan Tren 1 Jam (Rule R9):</span>
-              <label class="inline-flex items-center gap-2 cursor-pointer text-xs text-amber-300">
-                <input type="checkbox" id="sim-trend-r9" class="accent-amber-500 w-4 h-4" />
-                <span>Picu R9 (+5 NTU/jam)</span>
-              </label>
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">pH Maksimum</label>
+              <input type="number" step="0.1" id="cfgPhMax" required
+                class="mono w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white focus:outline-none focus:border-sky-400">
             </div>
           </div>
 
-          <!-- Preset Skenario Pengujian Cepat -->
-          <div class="flex flex-wrap gap-2 pt-1">
-            <button type="button" id="btn-preset-normal" class="text-xs bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 px-3 py-1.5 rounded-lg cursor-pointer">
-              Preset: Semua Normal
-            </button>
-            <button type="button" id="btn-preset-r10" class="text-xs bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 px-3 py-1.5 rounded-lg cursor-pointer">
-              Preset: Uji R10 (Abnormal Ganda)
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <!-- PANEL 2: KUSTOMISASI BAKU MUTU (BAB 2 & BAB 3) -->
-      <section class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg">
-        <div class="mb-4">
-          <h2 class="text-lg font-bold text-cyan-400">Kustomisasi Baku Mutu Parameter</h2>
-          <p class="text-xs text-slate-400">Tersimpan permanen ke Cloud & NVS ESP32 sebagai acuan Rule R1–R10.</p>
-        </div>
-
-        <form id="config-form" class="grid grid-cols-2 gap-4">
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Suhu Min (°C)</label>
-            <input type="number" step="0.1" id="cfg-suhu-min" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
-          </div>
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Suhu Max (°C)</label>
-            <input type="number" step="0.1" id="cfg-suhu-max" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Kekeruhan Maks (NTU)</label>
+              <input type="number" step="1" id="cfgNtuMax" required
+                class="mono w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white focus:outline-none focus:border-sky-400">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Tren Kekeruhan (NTU/jam)</label>
+              <input type="number" step="1" id="cfgTrendTh" required
+                class="mono w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white focus:outline-none focus:border-sky-400">
+            </div>
           </div>
 
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">pH Min</label>
-            <input type="number" step="0.1" id="cfg-ph-min" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
-          </div>
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">pH Max</label>
-            <input type="number" step="0.1" id="cfg-ph-max" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
-          </div>
-
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Kekeruhan Max (NTU)</label>
-            <input type="number" step="1" id="cfg-ntu-max" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
-          </div>
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Batas Tren R9 (NTU/jam)</label>
-            <input type="number" step="1" id="cfg-trend-th" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
-          </div>
-
-          <div class="col-span-2 flex items-center justify-between pt-3">
-            <span id="save-feedback" class="text-xs text-emerald-400 hidden">✓ Baku mutu tersimpan ke NVS & Cloud!</span>
-            <button type="submit" class="ml-auto bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-sm px-5 py-2.5 rounded-lg transition cursor-pointer">
+          <div class="pt-2 flex items-center justify-between gap-3">
+            <span id="cfgSaveFeedback" class="text-xs text-emerald-400 opacity-0 transition-opacity">Tersimpan ke Firebase & NVS!</span>
+            <button type="submit" class="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs transition shadow-lg shadow-sky-500/20">
               Simpan Baku Mutu
             </button>
           </div>
         </form>
-      </section>
+      </div>
 
-    </div>
-  </div>
+      <!-- 2. VIRTUAL SENSOR & PENGUJIAN RULE R1-R10 -->
+      <div class="glass-card rounded-2xl p-6 space-y-5">
+        <div class="flex items-start justify-between gap-2">
+          <div>
+            <h2 class="text-base font-bold text-white">Simulasi Virtual Sensor (Testing Rule)</h2>
+            <p class="text-xs text-slate-400 mt-0.5">Override pembacaan fisik untuk menguji logika inferensi R1–R10.</p>
+          </div>
+          <button onclick="disableAllSimulations()" class="text-xs px-2.5 py-1 rounded bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30">
+            Matikan Semua
+          </button>
+        </div>
 
-  <!-- Firebase Modular SDK -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-    import { getDatabase, ref, onValue, update } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
+        <div class="space-y-4">
+          <!-- Override Suhu -->
+          <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+            <div class="flex items-center justify-between">
+              <label class="flex items-center gap-2 text-xs font-semibold text-slate-200 cursor-pointer">
+                <input type="checkbox" id="simOvSuhu" onchange="pushSimulation()" class="w-4 h-4 rounded">
+                <span>Override Suhu (°C)</span>
+              </label>
+              <span id="simValSuhuLabel" class="mono text-xs font-bold text-sky-400">26.5 °C</span>
+            </div>
+            <input type="range" id="simSliderSuhu" min="18" max="36" step="0.5" value="26.5"
+              oninput="document.getElementById('simValSuhuLabel').textContent = parseFloat(this.value).toFixed(1) + ' °C'"
+              onchange="pushSimulation()" class="w-full">
+          </div>
 
-    // GANTI DENGAN CONFIG MILIK PROJECT FIREBASE KAMU
-    const firebaseConfig = {
-      apiKey: "AIzaSyDiebfgdgOHNO4ox2TQgaXs9zJLH90_iX8",
-      authDomain: "aquarium-monitor-guppy.firebaseapp.com",
-      databaseURL: "https://aquarium-monitor-guppy-default-rtdb.asia-southeast1.firebasedatabase.app",
-      projectId: "aquarium-monitor-guppy",
-      storageBucket: "aquarium-monitor-guppy.firebasestorage.app",
-      messagingSenderId: "528779591056",
-      appId: "1:528779591056:web:64ce8cf13f24357f7ac715",
-      measurementId: "G-6PSWRBNPF2"
-    };
+          <!-- Override pH -->
+          <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+            <div class="flex items-center justify-between">
+              <label class="flex items-center gap-2 text-xs font-semibold text-slate-200 cursor-pointer">
+                <input type="checkbox" id="simOvPh" onchange="pushSimulation()" class="w-4 h-4 rounded">
+                <span>Override pH</span>
+              </label>
+              <span id="simValPhLabel" class="mono text-xs font-bold text-indigo-400">7.2</span>
+            </div>
+            <input type="range" id="simSliderPh" min="4.0" max="10.0" step="0.1" value="7.2"
+              oninput="document.getElementById('simValPhLabel').textContent = parseFloat(this.value).toFixed(1)"
+              onchange="pushSimulation()" class="w-full">
+          </div>
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
+          <!-- Override Turbidity -->
+          <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+            <div class="flex items-center justify-between">
+              <label class="flex items-center gap-2 text-xs font-semibold text-slate-200 cursor-pointer">
+                <input type="checkbox" id="simOvNtu" onchange="pushSimulation()" class="w-4 h-4 rounded">
+                <span>Override Kekeruhan (NTU)</span>
+              </label>
+              <span id="simValNtuLabel" class="mono text-xs font-bold text-teal-400">12 NTU</span>
+            </div>
+            <input type="range" id="simSliderNtu" min="0" max="150" step="1" value="12"
+              oninput="document.getElementById('simValNtuLabel').textContent = this.value + ' NTU'"
+              onchange="pushSimulation()" class="w-full">
+          </div>
 
-    // 1. Sync /config ke Form Baku Mutu
-    onValue(ref(db, "config"), (snap) => {
-      const c = snap.val();
-      if (!c) return;
-      document.getElementById("cfg-suhu-min").value = c.suhu_min ?? 25;
-      document.getElementById("cfg-suhu-max").value = c.suhu_max ?? 28;
-      document.getElementById("cfg-ph-min").value = c.ph_min ?? 6.5;
-      document.getElementById("cfg-ph-max").value = c.ph_max ?? 8.0;
-      document.getElementById("cfg-ntu-max").value = c.turbidity_max ?? 25;
-      document.getElementById("cfg-trend-th").value = c.trend_threshold ?? 5;
+          <!-- Trigger Rule R9 (Tren Kekeruhan) -->
+          <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
+            <div>
+              <p class="text-xs font-semibold text-slate-200">Simulasi Lonjakan Tren (Rule R9)</p>
+              <p class="text-[11px] text-slate-400">Memicu kondisi peningkatan kekeruhan &ge; ambang batas per jam</p>
+            </div>
+            <input type="checkbox" id="simTrendR9" onchange="pushSimulation()" class="w-4 h-4 rounded cursor-pointer">
+          </div>
+        </div>
+      </div>
+    </section>
 
-      document.getElementById("range-suhu").textContent = `Baku Mutu: ${c.suhu_min ?? 25} – ${c.suhu_max ?? 28} °C`;
-      document.getElementById("range-ph").textContent = `Baku Mutu: ${c.ph_min ?? 6.5} – ${c.ph_max ?? 8.0} pH`;
-      document.getElementById("range-ntu").textContent = `Baku Mutu: ≤ ${c.turbidity_max ?? 25} NTU`;
-    });
+  </main>
 
-    // 2. Sync /sensor & Hasil Rule Engine dari ESP32
-    onValue(ref(db, "sensor"), (snap) => {
-      const badge = document.getElementById("conn-badge");
-      badge.textContent = "ESP32 & Cloud Online";
-      badge.className = "px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
+  <script>
+    const FIREBASE_HOST = "https://aquarium-monitor-guppy-default-rtdb.asia-southeast1.firebasedatabase.app";
 
-      const d = snap.val();
-      if (!d) return;
+    let lastPayloadSignature = "";
+    let lastDataTimestamp = 0;
+    let isEditingConfig = false;
+    let isEditingSim = false;
 
-      document.getElementById("val-suhu").textContent = parseFloat(d.suhu ?? 0).toFixed(2);
-      document.getElementById("val-ph").textContent = parseFloat(d.ph ?? 7.2).toFixed(2);
-      document.getElementById("val-ntu").textContent = parseFloat(d.turbidity ?? 12).toFixed(1);
-
-      const tagSuhu = document.getElementById("tag-sumber-suhu");
-      tagSuhu.textContent = d.suhu_sumber || "DS18B20";
-      tagSuhu.className = d.suhu_sumber === "SIMULASI"
-        ? "text-[11px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded"
-        : "text-[11px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded";
-
-      document.getElementById("badge-rules").textContent = `Rules Aktif: ${d.active_rules || "-"}`;
-      document.getElementById("teks-rekomendasi").textContent = d.rekomendasi || "Menunggu evaluasi...";
-
-      const statusBadge = document.getElementById("badge-status-utama");
-      const panelRbs = document.getElementById("panel-rbs");
-      if (d.is_abnormal) {
-        statusBadge.textContent = d.status_ringkas || "PERLU PERAWATAN";
-        statusBadge.className = "px-3 py-1 rounded-lg text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40";
-        panelRbs.className = "bg-slate-900 border border-rose-500/50 rounded-2xl p-6 shadow-lg mb-8";
-      } else {
-        statusBadge.textContent = d.status_ringkas || "SEMUA NORMAL";
-        statusBadge.className = "px-3 py-1 rounded-lg text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
-        panelRbs.className = "bg-slate-900 border border-emerald-500/40 rounded-2xl p-6 shadow-lg mb-8";
+    // --- INISIALISASI CHART.JS ---
+    const ctx = document.getElementById('telemetryChart').getContext('2d');
+    const telemetryChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: 'Suhu (°C)',
+            data: [],
+            borderColor: '#38bdf8',
+            backgroundColor: 'rgba(56, 189, 248, 0.1)',
+            tension: 0.35,
+            borderWidth: 2,
+            pointRadius: 2
+          },
+          {
+            label: 'pH',
+            data: [],
+            borderColor: '#818cf8',
+            backgroundColor: 'rgba(129, 140, 248, 0.1)',
+            tension: 0.35,
+            borderWidth: 2,
+            pointRadius: 2
+          },
+          {
+            label: 'Kekeruhan (NTU)',
+            data: [],
+            borderColor: '#2dd4bf',
+            backgroundColor: 'rgba(45, 212, 191, 0.1)',
+            tension: 0.35,
+            borderWidth: 2,
+            pointRadius: 2
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { color: '#cbd5e1', font: { size: 11 } } }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#64748b', font: { size: 10 } },
+            grid: { color: 'rgba(51, 65, 85, 0.3)' }
+          },
+          y: {
+            ticks: { color: '#94a3b8', font: { size: 10 } },
+            grid: { color: 'rgba(51, 65, 85, 0.3)' }
+          }
+        }
       }
     });
 
-    // 3. Kontrol Virtual Environment -> Kirim ke /simulasi Firebase
-    const elOverrideSuhu = document.getElementById("sim-override-suhu");
-    const boxSliderSuhu = document.getElementById("box-slider-suhu");
-    const elSimSuhu = document.getElementById("sim-suhu");
-    const elSimPh = document.getElementById("sim-ph");
-    const elSimNtu = document.getElementById("sim-ntu");
-    const elSimR9 = document.getElementById("sim-trend-r9");
-
-    function pushSimulasi() {
-      const override = elOverrideSuhu.checked;
-      boxSliderSuhu.className = override ? "transition-opacity" : "opacity-40 pointer-events-none transition-opacity";
-
-      document.getElementById("lbl-sim-suhu").textContent = parseFloat(elSimSuhu.value).toFixed(1);
-      document.getElementById("lbl-sim-ph").textContent = parseFloat(elSimPh.value).toFixed(1);
-      document.getElementById("lbl-sim-ntu").textContent = elSimNtu.value;
-
-      update(ref(db, "simulasi"), {
-        override_suhu: override,
-        suhu: parseFloat(elSimSuhu.value),
-        ph: parseFloat(elSimPh.value),
-        turbidity: parseFloat(elSimNtu.value),
-        trigger_trend_r9: elSimR9.checked
-      });
+    function resetChart() {
+      telemetryChart.data.labels = [];
+      telemetryChart.data.datasets.forEach(ds => ds.data = []);
+      telemetryChart.update();
     }
 
-    [elOverrideSuhu, elSimSuhu, elSimPh, elSimNtu, elSimR9].forEach(el => {
-      el.addEventListener("input", pushSimulasi);
-    });
+    // --- POLLING DATA TELEMETRI DARI FIREBASE (/sensor.json) ---
+    async function fetchSensorData() {
+      try {
+        const res = await fetch(`${FIREBASE_HOST}/sensor.json`);
+        if (!res.ok) throw new Error("HTTP error");
+        const data = await res.json();
+        if (!data) return;
 
-    // Preset Pengujian Cepat (Sesuai Tabel 3.2 Blackbox Testing)
-    document.getElementById("btn-preset-normal").addEventListener("click", () => {
-      elOverrideSuhu.checked = false;
-      elSimPh.value = 7.2;
-      elSimNtu.value = 12;
-      elSimR9.checked = false;
-      pushSimulasi();
-    });
+        // Cek apakah data baru benar-benar masuk dari ESP32
+        const signature = JSON.stringify(data);
+        const now = Date.now();
+        if (signature !== lastPayloadSignature) {
+          lastPayloadSignature = signature;
+          lastDataTimestamp = now;
+        }
 
-    document.getElementById("btn-preset-r10").addEventListener("click", () => {
-      elOverrideSuhu.checked = true;
-      elSimSuhu.value = 31.0; // Picu R3 (Suhu tinggi)
-      elSimPh.value = 5.5;    // Picu R4 (pH asam)
-      elSimNtu.value = 35;    // Picu R8 (Keruh)
-      elSimR9.checked = true; // Picu R9 (Tren) -> Gabung jadi R10
-      pushSimulasi();
-    });
+        const isEspOnline = (now - lastDataTimestamp) < 8000;
+        updateConnectionUI(isEspOnline);
 
-    // 4. Simpan Kustomisasi Baku Mutu ke /config Firebase
-    document.getElementById("config-form").addEventListener("submit", async (e) => {
+        // Update nilai sensor utama
+        document.getElementById('valSuhu').textContent = Number(data.suhu ?? 0).toFixed(1);
+        document.getElementById('valPh').textContent = Number(data.ph ?? 0).toFixed(2);
+        document.getElementById('valNtu').textContent = Math.round(Number(data.turbidity ?? 0));
+
+        // Badge sumber data (ACT vs SIMULASI)
+        updateSourceBadge('suhuSourceBadge', data.suhu_sumber || 'DS18B20');
+        updateSourceBadge('phSourceBadge', data.ph_sumber || 'PH-4502C');
+        updateSourceBadge('ntuSourceBadge', data.turbidity_sumber || 'TSW-30');
+
+        // Status MOSFET Duty-Cycle pH
+        const mosfetDot = document.getElementById('mosfetDot');
+        const mosfetText = document.getElementById('mosfetText');
+        const intervalMin = Number(data.ph_interval_menit ?? 30);
+        if (data.ph_mosfet_aktif) {
+          mosfetDot.className = "w-2 h-2 rounded-full bg-emerald-400 animate-ping";
+          mosfetText.textContent = "pH MOSFET: ON (Sampling / Live)";
+        } else {
+          mosfetDot.className = "w-2 h-2 rounded-full bg-slate-500";
+          mosfetText.textContent = `pH MOSFET: OFF (Jeda ${intervalMin >= 1 ? intervalMin + ' mnt' : Math.round(intervalMin * 60) + ' dtk'})`;
+        }
+
+        // Update Banner Evaluasi Rule-Based System
+        const banner = document.getElementById('evalBanner');
+        const badge = document.getElementById('evalStatusBadge');
+        document.getElementById('evalRules').textContent = data.active_rules || '-';
+        document.getElementById('evalRekomendasi').textContent = data.rekomendasi || '-';
+        document.getElementById('lastUpdateText').textContent = new Date().toLocaleTimeString('id-ID');
+
+        if (data.is_abnormal) {
+          banner.className = "glass-card rounded-2xl p-5 border-l-4 border-l-rose-500 transition-all";
+          badge.className = "px-2.5 py-0.5 rounded-md text-xs font-bold uppercase tracking-wider bg-rose-500/20 text-rose-300 border border-rose-500/30";
+          badge.textContent = data.status_ringkas || "ABNORMAL";
+        } else {
+          banner.className = "glass-card rounded-2xl p-5 border-l-4 border-l-emerald-500 transition-all";
+          badge.className = "px-2.5 py-0.5 rounded-md text-xs font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+          badge.textContent = data.status_ringkas || "SEMUA NORMAL";
+        }
+
+        // Update Grafik
+        const timeLabel = new Date().toLocaleTimeString('id-ID', { hour12: false });
+        if (telemetryChart.data.labels.length >= 25) {
+          telemetryChart.data.labels.shift();
+          telemetryChart.data.datasets.forEach(ds => ds.data.shift());
+        }
+        telemetryChart.data.labels.push(timeLabel);
+        telemetryChart.data.datasets[0].data.push(Number(data.suhu ?? 0));
+        telemetryChart.data.datasets[1].data.push(Number(data.ph ?? 0));
+        telemetryChart.data.datasets[2].data.push(Number(data.turbidity ?? 0));
+        telemetryChart.update('none');
+
+      } catch (err) {
+        updateConnectionUI(false);
+      }
+    }
+
+    function updateSourceBadge(elId, source) {
+      const el = document.getElementById(elId);
+      el.textContent = source;
+      if (source === 'SIMULASI') {
+        el.className = "mono text-[11px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold";
+      } else {
+        el.className = "mono text-[11px] px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30";
+      }
+    }
+
+    function updateConnectionUI(online) {
+      const badge = document.getElementById('connBadge');
+      const dot = document.getElementById('connDot');
+      const text = document.getElementById('connText');
+      if (online) {
+        badge.className = "px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 flex items-center gap-2";
+        dot.className = "w-2 h-2 rounded-full bg-emerald-400";
+        text.textContent = "Cloud Online (ESP32 Aktif)";
+      } else {
+        badge.className = "px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-500/10 border border-rose-500/30 text-rose-300 flex items-center gap-2";
+        dot.className = "w-2 h-2 rounded-full bg-rose-400";
+        text.textContent = "ESP32 Standby / Offline";
+      }
+    }
+
+    // --- SYNC CONFIG (/config.json) ---
+    async function loadConfig() {
+      if (isEditingConfig) return;
+      try {
+        const res = await fetch(`${FIREBASE_HOST}/config.json`);
+        const cfg = await res.json();
+        if (!cfg) return;
+
+        document.getElementById('cfgSuhuMin').value = cfg.suhu_min ?? 25.0;
+        document.getElementById('cfgSuhuMax').value = cfg.suhu_max ?? 28.0;
+        document.getElementById('cfgPhMin').value = cfg.ph_min ?? 6.5;
+        document.getElementById('cfgPhMax').value = cfg.ph_max ?? 8.0;
+        document.getElementById('cfgNtuMax').value = cfg.turbidity_max ?? 25;
+        document.getElementById('cfgTrendTh').value = cfg.trend_threshold ?? 5;
+
+        document.getElementById('rangeSuhuLabel').textContent = `${Number(cfg.suhu_min ?? 25).toFixed(1)} - ${Number(cfg.suhu_max ?? 28).toFixed(1)} °C`;
+        document.getElementById('rangePhLabel').textContent = `${Number(cfg.ph_min ?? 6.5).toFixed(1)} - ${Number(cfg.ph_max ?? 8.0).toFixed(1)} pH`;
+        document.getElementById('rangeNtuLabel').textContent = `< ${cfg.turbidity_max ?? 25} NTU (+${cfg.trend_threshold ?? 5}/jam)`;
+      } catch (e) {}
+    }
+
+    async function saveConfig(e) {
       e.preventDefault();
-      await update(ref(db, "config"), {
-        suhu_min: parseFloat(document.getElementById("cfg-suhu-min").value),
-        suhu_max: parseFloat(document.getElementById("cfg-suhu-max").value),
-        ph_min: parseFloat(document.getElementById("cfg-ph-min").value),
-        ph_max: parseFloat(document.getElementById("cfg-ph-max").value),
-        turbidity_max: parseFloat(document.getElementById("cfg-ntu-max").value),
-        trend_threshold: parseFloat(document.getElementById("cfg-trend-th").value)
+      const payload = {
+        suhu_min: parseFloat(document.getElementById('cfgSuhuMin').value),
+        suhu_max: parseFloat(document.getElementById('cfgSuhuMax').value),
+        ph_min: parseFloat(document.getElementById('cfgPhMin').value),
+        ph_max: parseFloat(document.getElementById('cfgPhMax').value),
+        turbidity_max: parseFloat(document.getElementById('cfgNtuMax').value),
+        trend_threshold: parseFloat(document.getElementById('cfgTrendTh').value)
+      };
+
+      await fetch(`${FIREBASE_HOST}/config.json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       });
 
-      const fb = document.getElementById("save-feedback");
-      fb.classList.remove("hidden");
-      setTimeout(() => fb.classList.add("hidden"), 4000);
+      isEditingConfig = false;
+      loadConfig();
+      const fb = document.getElementById('cfgSaveFeedback');
+      fb.classList.remove('opacity-0');
+      setTimeout(() => fb.classList.add('opacity-0'), 3000);
+    }
+
+    function resetDefaultConfig() {
+      document.getElementById('cfgSuhuMin').value = 25.0;
+      document.getElementById('cfgSuhuMax').value = 28.0;
+      document.getElementById('cfgPhMin').value = 6.5;
+      document.getElementById('cfgPhMax').value = 8.0;
+      document.getElementById('cfgNtuMax').value = 25;
+      document.getElementById('cfgTrendTh').value = 5;
+      document.getElementById('configForm').requestSubmit();
+    }
+
+    // --- SYNC VIRTUAL SIMULATION (/simulasi.json) ---
+    async function loadSimulation() {
+      if (isEditingSim) return;
+      try {
+        const res = await fetch(`${FIREBASE_HOST}/simulasi.json`);
+        const sim = await res.json();
+        if (!sim) return;
+
+        document.getElementById('simOvSuhu').checked = !!sim.override_suhu;
+        document.getElementById('simOvPh').checked = !!sim.override_ph;
+        document.getElementById('simOvNtu').checked = !!sim.override_turbidity;
+        document.getElementById('simTrendR9').checked = !!sim.trigger_trend_r9;
+
+        const sVal = sim.suhu ?? 26.5;
+        const pVal = sim.ph ?? 7.2;
+        const nVal = sim.turbidity ?? 12;
+
+        document.getElementById('simSliderSuhu').value = sVal;
+        document.getElementById('simValSuhuLabel').textContent = Number(sVal).toFixed(1) + ' °C';
+
+        document.getElementById('simSliderPh').value = pVal;
+        document.getElementById('simValPhLabel').textContent = Number(pVal).toFixed(1);
+
+        document.getElementById('simSliderNtu').value = nVal;
+        document.getElementById('simValNtuLabel').textContent = Math.round(nVal) + ' NTU';
+      } catch (e) {}
+    }
+
+    async function pushSimulation() {
+      isEditingSim = true;
+      const payload = {
+        override_suhu: document.getElementById('simOvSuhu').checked,
+        override_ph: document.getElementById('simOvPh').checked,
+        override_turbidity: document.getElementById('simOvNtu').checked,
+        suhu: parseFloat(document.getElementById('simSliderSuhu').value),
+        ph: parseFloat(document.getElementById('simSliderPh').value),
+        turbidity: parseFloat(document.getElementById('simSliderNtu').value),
+        trigger_trend_r9: document.getElementById('simTrendR9').checked
+      };
+
+      await fetch(`${FIREBASE_HOST}/simulasi.json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      setTimeout(() => { isEditingSim = false; }, 1000);
+    }
+
+    async function disableAllSimulations() {
+      document.getElementById('simOvSuhu').checked = false;
+      document.getElementById('simOvPh').checked = false;
+      document.getElementById('simOvNtu').checked = false;
+      document.getElementById('simTrendR9').checked = false;
+      await pushSimulation();
+    }
+
+    // Tandai saat user sedang mengetik di form config agar tidak tertimpa polling
+    document.querySelectorAll('#configForm input').forEach(inp => {
+      inp.addEventListener('focus', () => isEditingConfig = true);
     });
+
+    // Jalankan siklus polling
+    loadConfig();
+    loadSimulation();
+    fetchSensorData();
+    setInterval(fetchSensorData, 1500);
+    setInterval(loadConfig, 4000);
+    setInterval(loadSimulation, 4000);
   </script>
 </body>
 </html>
