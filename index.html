@@ -37,17 +37,23 @@
         </div>
       </div>
 
-      <div class="flex items-center gap-3 flex-wrap">
+      <div class="flex items-center gap-2.5 flex-wrap">
         <!-- Status MOSFET pH dengan Live Countdown dari ESP32 -->
         <div id="mosfetBadge" class="mono px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/90 border border-slate-700 text-slate-300 flex items-center gap-2">
           <span id="mosfetDot" class="w-2 h-2 rounded-full bg-slate-500"></span>
           <span id="mosfetText">pH MOSFET: Memuat...</span>
         </div>
 
-        <!-- Status Koneksi ESP32 -->
-        <div id="connBadge" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/10 border border-amber-500/30 text-amber-300 flex items-center gap-2">
-          <span id="connDot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-          <span id="connText">Menghubungkan Firebase...</span>
+        <!-- Status Koneksi Firebase Cloud -->
+        <div id="cloudBadge" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/10 border border-amber-500/30 text-amber-300 flex items-center gap-2">
+          <span id="cloudDot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+          <span id="cloudText">Cloud: Menghubungkan...</span>
+        </div>
+
+        <!-- Status Perangkat ESP32 (Heartbeat uptime_ms) -->
+        <div id="espBadge" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 border border-slate-700 text-slate-300 flex items-center gap-2">
+          <span id="espDot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+          <span id="espText">ESP32: Mengecek...</span>
         </div>
       </div>
     </div>
@@ -308,7 +314,7 @@
       "R10": "R10: Kombinasi >= 2 parameter abnormal"
     };
 
-    let lastUptimeMs = -1;
+    let lastUptimeMs = null;
     let lastDataTimestamp = 0;
     let isEditingConfig = false;
     let isEditingSim = false;
@@ -418,17 +424,29 @@
         const res = await fetch(`${FIREBASE_HOST}/sensor.json`, { cache: "no-store" });
         if (!res.ok) throw new Error("HTTP error");
         const data = await res.json();
-        if (!data) return;
+
+        // Jika fetch ke Firebase sukses, maka Cloud pasti Terhubung
+        updateCloudUI(true);
+
+        if (!data) {
+          updateEspUI(false);
+          return;
+        }
 
         const currentUptime = data.uptime_ms ?? JSON.stringify(data);
         const now = Date.now();
-        if (currentUptime !== lastUptimeMs) {
+
+        if (lastUptimeMs === null) {
+          // Pembacaan pertama kali saat halaman dibuka: simpan nilai awal tanpa langsung mengklaim online
+          lastUptimeMs = currentUptime;
+        } else if (currentUptime !== lastUptimeMs) {
+          // Heartbeat berubah -> ESP32 aktif mengirim data baru
           lastUptimeMs = currentUptime;
           lastDataTimestamp = now;
         }
 
-        const isEspOnline = (now - lastDataTimestamp) < 12000;
-        updateConnectionUI(isEspOnline);
+        const isEspOnline = (lastDataTimestamp > 0) && ((now - lastDataTimestamp) < 10000);
+        updateEspUI(isEspOnline);
 
         const suhuVal = Number(data.suhu ?? 0);
         const phVal = Number(data.ph ?? 0);
@@ -452,7 +470,7 @@
         }
         renderMosfetCounter();
 
-        // Update Banner Evaluasi (Bersihkan tag [Rx] jika masih tersisa)
+        // Update Banner Evaluasi
         const banner = document.getElementById('evalBanner');
         const badge = document.getElementById('evalStatusBadge');
         const cleanRekom = (data.rekomendasi || '-').replace(/\[R\d+(?:,\s*R\d+)*\]\s*/g, '');
@@ -489,20 +507,23 @@
           rulesDesc.textContent = "";
         }
 
-        // Update Grafik
-        const timeLabel = new Date().toLocaleTimeString('id-ID', { hour12: false });
-        if (telemetryChart.data.labels.length >= 25) {
-          telemetryChart.data.labels.shift();
-          telemetryChart.data.datasets.forEach(ds => ds.data.shift());
+        // Update Grafik hanya jika ESP32 sedang online mengirim data baru
+        if (isEspOnline) {
+          const timeLabel = new Date().toLocaleTimeString('id-ID', { hour12: false });
+          if (telemetryChart.data.labels.length >= 25) {
+            telemetryChart.data.labels.shift();
+            telemetryChart.data.datasets.forEach(ds => ds.data.shift());
+          }
+          telemetryChart.data.labels.push(timeLabel);
+          telemetryChart.data.datasets[0].data.push(suhuVal);
+          telemetryChart.data.datasets[1].data.push(phVal);
+          telemetryChart.data.datasets[2].data.push(ntuVal);
+          telemetryChart.update('none');
         }
-        telemetryChart.data.labels.push(timeLabel);
-        telemetryChart.data.datasets[0].data.push(suhuVal);
-        telemetryChart.data.datasets[1].data.push(phVal);
-        telemetryChart.data.datasets[2].data.push(ntuVal);
-        telemetryChart.update('none');
 
       } catch (err) {
-        updateConnectionUI(false);
+        updateCloudUI(false);
+        updateEspUI(false);
       }
     }
 
@@ -516,18 +537,33 @@
       }
     }
 
-    function updateConnectionUI(online) {
-      const badge = document.getElementById('connBadge');
-      const dot = document.getElementById('connDot');
-      const text = document.getElementById('connText');
+    function updateCloudUI(online) {
+      const badge = document.getElementById('cloudBadge');
+      const dot = document.getElementById('cloudDot');
+      const text = document.getElementById('cloudText');
       if (online) {
         badge.className = "px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 flex items-center gap-2";
         dot.className = "w-2 h-2 rounded-full bg-emerald-400";
-        text.textContent = "Cloud Online (ESP32 Aktif)";
+        text.textContent = "Cloud: Terhubung";
       } else {
         badge.className = "px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-500/10 border border-rose-500/30 text-rose-300 flex items-center gap-2";
         dot.className = "w-2 h-2 rounded-full bg-rose-400";
-        text.textContent = "ESP32 Standby / Offline";
+        text.textContent = "Cloud: Terputus";
+      }
+    }
+
+    function updateEspUI(online) {
+      const badge = document.getElementById('espBadge');
+      const dot = document.getElementById('espDot');
+      const text = document.getElementById('espText');
+      if (online) {
+        badge.className = "px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-500/10 border border-sky-500/30 text-sky-300 flex items-center gap-2";
+        dot.className = "w-2 h-2 rounded-full bg-sky-400 animate-pulse";
+        text.textContent = "ESP32: Online";
+      } else {
+        badge.className = "px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-500/10 border border-rose-500/30 text-rose-300 flex items-center gap-2";
+        dot.className = "w-2 h-2 rounded-full bg-rose-400";
+        text.textContent = "ESP32: Offline";
       }
     }
 
