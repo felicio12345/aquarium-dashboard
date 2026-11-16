@@ -167,7 +167,7 @@
         <div class="flex items-start justify-between gap-2">
           <div>
             <h2 class="text-base font-bold text-white">Standar Baku Mutu Air (NVS Sync)</h2>
-            <p class="text-xs text-slate-400 mt-0.5">Perubahan otomatis disinkronkan ke memori NVS ESP32 dalam 3 detik.</p>
+            <p class="text-xs text-slate-400 mt-0.5">Perubahan otomatis disinkronkan ke memori NVS ESP32 dalam 4 detik.</p>
           </div>
           <button onclick="resetDefaultConfig()" class="text-xs px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700">
             Default Guppy
@@ -204,12 +204,12 @@
           <div class="grid grid-cols-2 gap-4">
             <div>
               <label class="block text-xs font-medium text-slate-400 mb-1">Kekeruhan Maks (NTU)</label>
-              <input type="number" step="1" id="cfgNtuMax" required
+              <input type="number" step="1" max="100" id="cfgNtuMax" required
                 class="mono w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white focus:outline-none focus:border-sky-400">
             </div>
             <div>
               <label class="block text-xs font-medium text-slate-400 mb-1">Tren Kekeruhan (NTU/jam)</label>
-              <input type="number" step="1" id="cfgTrendTh" required
+              <input type="number" step="1" max="100" id="cfgTrendTh" required
                 class="mono w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white focus:outline-none focus:border-sky-400">
             </div>
           </div>
@@ -264,7 +264,7 @@
               onchange="pushSimulation()" class="w-full">
           </div>
 
-          <!-- Override Turbidity (Max 100 NTU) -->
+          <!-- Override Turbidity (Limit 0 - 100 NTU sesuai grafik) -->
           <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
             <div class="flex items-center justify-between">
               <label class="flex items-center gap-2 text-xs font-semibold text-slate-200 cursor-pointer">
@@ -308,7 +308,7 @@
       "R10": "R10: Kombinasi >= 2 parameter abnormal"
     };
 
-    let lastPayloadSignature = "";
+    let lastUptimeMs = -1;
     let lastDataTimestamp = 0;
     let isEditingConfig = false;
     let isEditingSim = false;
@@ -414,25 +414,29 @@
     // --- POLLING DATA TELEMETRI DARI FIREBASE (/sensor.json) ---
     async function fetchSensorData() {
       try {
-        const res = await fetch(`${FIREBASE_HOST}/sensor.json`);
+        const res = await fetch(`${FIREBASE_HOST}/sensor.json`, { cache: "no-store" });
         if (!res.ok) throw new Error("HTTP error");
         const data = await res.json();
         if (!data) return;
 
-        const signature = JSON.stringify(data);
+        const currentUptime = data.uptime_ms ?? JSON.stringify(data);
         const now = Date.now();
-        if (signature !== lastPayloadSignature) {
-          lastPayloadSignature = signature;
+        if (currentUptime !== lastUptimeMs) {
+          lastUptimeMs = currentUptime;
           lastDataTimestamp = now;
         }
 
-        const isEspOnline = (now - lastDataTimestamp) < 8000;
+        const isEspOnline = (now - lastDataTimestamp) < 12000;
         updateConnectionUI(isEspOnline);
 
+        const suhuVal = Number(data.suhu ?? 0);
+        const phVal = Number(data.ph ?? 0);
+        const ntuVal = Math.min(100, Math.max(0, Number(data.turbidity ?? 0)));
+
         // Update nilai sensor utama
-        document.getElementById('valSuhu').textContent = Number(data.suhu ?? 0).toFixed(1);
-        document.getElementById('valPh').textContent = Number(data.ph ?? 0).toFixed(2);
-        document.getElementById('valNtu').textContent = Math.round(Number(data.turbidity ?? 0));
+        document.getElementById('valSuhu').textContent = suhuVal.toFixed(1);
+        document.getElementById('valPh').textContent = phVal.toFixed(2);
+        document.getElementById('valNtu').textContent = Math.round(ntuVal);
 
         // Badge sumber data (ACT vs SIMULASI)
         updateSourceBadge('suhuSourceBadge', data.suhu_sumber || 'DS18B20');
@@ -491,9 +495,9 @@
           telemetryChart.data.datasets.forEach(ds => ds.data.shift());
         }
         telemetryChart.data.labels.push(timeLabel);
-        telemetryChart.data.datasets[0].data.push(Number(data.suhu ?? 0));
-        telemetryChart.data.datasets[1].data.push(Number(data.ph ?? 0));
-        telemetryChart.data.datasets[2].data.push(Number(data.turbidity ?? 0));
+        telemetryChart.data.datasets[0].data.push(suhuVal);
+        telemetryChart.data.datasets[1].data.push(phVal);
+        telemetryChart.data.datasets[2].data.push(ntuVal);
         telemetryChart.update('none');
 
       } catch (err) {
@@ -530,7 +534,7 @@
     async function loadConfig() {
       if (isEditingConfig) return;
       try {
-        const res = await fetch(`${FIREBASE_HOST}/config.json`);
+        const res = await fetch(`${FIREBASE_HOST}/config.json`, { cache: "no-store" });
         const cfg = await res.json();
         if (!cfg) return;
 
@@ -554,8 +558,8 @@
         suhu_max: parseFloat(document.getElementById('cfgSuhuMax').value),
         ph_min: parseFloat(document.getElementById('cfgPhMin').value),
         ph_max: parseFloat(document.getElementById('cfgPhMax').value),
-        turbidity_max: parseFloat(document.getElementById('cfgNtuMax').value),
-        trend_threshold: parseFloat(document.getElementById('cfgTrendTh').value)
+        turbidity_max: Math.min(100, parseFloat(document.getElementById('cfgNtuMax').value)),
+        trend_threshold: Math.min(100, parseFloat(document.getElementById('cfgTrendTh').value))
       };
 
       await fetch(`${FIREBASE_HOST}/config.json`, {
@@ -585,7 +589,7 @@
     async function loadSimulation() {
       if (isEditingSim) return;
       try {
-        const res = await fetch(`${FIREBASE_HOST}/simulasi.json`);
+        const res = await fetch(`${FIREBASE_HOST}/simulasi.json`, { cache: "no-store" });
         const sim = await res.json();
         if (!sim) return;
 
@@ -596,7 +600,7 @@
 
         const sVal = sim.suhu ?? 26.5;
         const pVal = sim.ph ?? 7.2;
-        const nVal = sim.turbidity ?? 12;
+        const nVal = Math.min(100, sim.turbidity ?? 12);
 
         document.getElementById('simSliderSuhu').value = sVal;
         document.getElementById('simValSuhuLabel').textContent = Number(sVal).toFixed(1) + ' °C';
@@ -617,7 +621,7 @@
         override_turbidity: document.getElementById('simOvNtu').checked,
         suhu: parseFloat(document.getElementById('simSliderSuhu').value),
         ph: parseFloat(document.getElementById('simSliderPh').value),
-        turbidity: parseFloat(document.getElementById('simSliderNtu').value),
+        turbidity: Math.min(100, parseFloat(document.getElementById('simSliderNtu').value)),
         trigger_trend_r9: document.getElementById('simTrendR9').checked
       };
 
@@ -642,14 +646,21 @@
       inp.addEventListener('focus', () => isEditingConfig = true);
     });
 
-    // Jalankan siklus polling & countdown 1 detik
-    loadConfig();
-    loadSimulation();
-    fetchSensorData();
+    // Loop polling berurutan (anti-tumpuk / anti-lag)
+    async function sensorPollLoop() {
+      await fetchSensorData();
+      setTimeout(sensorPollLoop, 2000);
+    }
+
+    async function configSimPollLoop() {
+      await loadConfig();
+      await loadSimulation();
+      setTimeout(configSimPollLoop, 4000);
+    }
+
+    sensorPollLoop();
+    configSimPollLoop();
     setInterval(renderMosfetCounter, 1000);
-    setInterval(fetchSensorData, 1500);
-    setInterval(loadConfig, 4000);
-    setInterval(loadSimulation, 4000);
   </script>
 </body>
 </html>
