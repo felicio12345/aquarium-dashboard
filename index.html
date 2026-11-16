@@ -167,7 +167,7 @@
         <div class="flex items-start justify-between gap-2">
           <div>
             <h2 class="text-base font-bold text-white">Standar Baku Mutu Air (NVS Sync)</h2>
-            <p class="text-xs text-slate-400 mt-0.5">Perubahan otomatis disinkronkan ke memori NVS ESP32 dalam 4 detik.</p>
+            <p class="text-xs text-slate-400 mt-0.5">Perubahan otomatis disinkronkan ke memori NVS ESP32.</p>
           </div>
           <button onclick="resetDefaultConfig()" class="text-xs px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700">
             Default Guppy
@@ -204,12 +204,12 @@
           <div class="grid grid-cols-2 gap-4">
             <div>
               <label class="block text-xs font-medium text-slate-400 mb-1">Kekeruhan Maks (NTU)</label>
-              <input type="number" step="1" max="100" id="cfgNtuMax" required
+              <input type="number" step="1" min="0" max="100" id="cfgNtuMax" required
                 class="mono w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white focus:outline-none focus:border-sky-400">
             </div>
             <div>
               <label class="block text-xs font-medium text-slate-400 mb-1">Tren Kekeruhan (NTU/jam)</label>
-              <input type="number" step="1" max="100" id="cfgTrendTh" required
+              <input type="number" step="1" min="0" max="100" id="cfgTrendTh" required
                 class="mono w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white focus:outline-none focus:border-sky-400">
             </div>
           </div>
@@ -312,6 +312,7 @@
     let lastDataTimestamp = 0;
     let isEditingConfig = false;
     let isEditingSim = false;
+    let simDebounceTimer = null;
 
     // Variabel state live countdown MOSFET pH
     let livePhState = "STANDBY";
@@ -542,12 +543,12 @@
         document.getElementById('cfgSuhuMax').value = cfg.suhu_max ?? 28.0;
         document.getElementById('cfgPhMin').value = cfg.ph_min ?? 6.5;
         document.getElementById('cfgPhMax').value = cfg.ph_max ?? 8.0;
-        document.getElementById('cfgNtuMax').value = cfg.turbidity_max ?? 25;
-        document.getElementById('cfgTrendTh').value = cfg.trend_threshold ?? 5;
+        document.getElementById('cfgNtuMax').value = Math.min(100, cfg.turbidity_max ?? 25);
+        document.getElementById('cfgTrendTh').value = Math.min(100, cfg.trend_threshold ?? 5);
 
         document.getElementById('rangeSuhuLabel').textContent = `${Number(cfg.suhu_min ?? 25).toFixed(1)} - ${Number(cfg.suhu_max ?? 28).toFixed(1)} °C`;
         document.getElementById('rangePhLabel').textContent = `${Number(cfg.ph_min ?? 6.5).toFixed(1)} - ${Number(cfg.ph_max ?? 8.0).toFixed(1)} pH`;
-        document.getElementById('rangeNtuLabel').textContent = `< ${cfg.turbidity_max ?? 25} NTU (+${cfg.trend_threshold ?? 5}/jam)`;
+        document.getElementById('rangeNtuLabel').textContent = `< ${Math.min(100, cfg.turbidity_max ?? 25)} NTU (+${Math.min(100, cfg.trend_threshold ?? 5)}/jam)`;
       } catch (e) {}
     }
 
@@ -558,8 +559,8 @@
         suhu_max: parseFloat(document.getElementById('cfgSuhuMax').value),
         ph_min: parseFloat(document.getElementById('cfgPhMin').value),
         ph_max: parseFloat(document.getElementById('cfgPhMax').value),
-        turbidity_max: Math.min(100, parseFloat(document.getElementById('cfgNtuMax').value)),
-        trend_threshold: Math.min(100, parseFloat(document.getElementById('cfgTrendTh').value))
+        turbidity_max: Math.min(100, Math.max(0, parseFloat(document.getElementById('cfgNtuMax').value))),
+        trend_threshold: Math.min(100, Math.max(0, parseFloat(document.getElementById('cfgTrendTh').value)))
       };
 
       await fetch(`${FIREBASE_HOST}/config.json`, {
@@ -600,7 +601,7 @@
 
         const sVal = sim.suhu ?? 26.5;
         const pVal = sim.ph ?? 7.2;
-        const nVal = Math.min(100, sim.turbidity ?? 12);
+        const nVal = Math.min(100, Math.max(0, sim.turbidity ?? 12));
 
         document.getElementById('simSliderSuhu').value = sVal;
         document.getElementById('simValSuhuLabel').textContent = Number(sVal).toFixed(1) + ' °C';
@@ -613,25 +614,29 @@
       } catch (e) {}
     }
 
-    async function pushSimulation() {
+    function pushSimulation() {
       isEditingSim = true;
-      const payload = {
-        override_suhu: document.getElementById('simOvSuhu').checked,
-        override_ph: document.getElementById('simOvPh').checked,
-        override_turbidity: document.getElementById('simOvNtu').checked,
-        suhu: parseFloat(document.getElementById('simSliderSuhu').value),
-        ph: parseFloat(document.getElementById('simSliderPh').value),
-        turbidity: Math.min(100, parseFloat(document.getElementById('simSliderNtu').value)),
-        trigger_trend_r9: document.getElementById('simTrendR9').checked
-      };
+      clearTimeout(simDebounceTimer);
+      simDebounceTimer = setTimeout(async () => {
+        const payload = {
+          override_suhu: document.getElementById('simOvSuhu').checked,
+          override_ph: document.getElementById('simOvPh').checked,
+          override_turbidity: document.getElementById('simOvNtu').checked,
+          suhu: parseFloat(document.getElementById('simSliderSuhu').value),
+          ph: parseFloat(document.getElementById('simSliderPh').value),
+          turbidity: Math.min(100, Math.max(0, parseFloat(document.getElementById('simSliderNtu').value))),
+          trigger_trend_r9: document.getElementById('simTrendR9').checked
+        };
 
-      await fetch(`${FIREBASE_HOST}/simulasi.json`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+        await fetch(`${FIREBASE_HOST}/simulasi.json`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
 
-      setTimeout(() => { isEditingSim = false; }, 1000);
+        setTimeout(fetchSensorData, 900);
+        setTimeout(() => { isEditingSim = false; }, 1200);
+      }, 200);
     }
 
     async function disableAllSimulations() {
@@ -639,7 +644,7 @@
       document.getElementById('simOvPh').checked = false;
       document.getElementById('simOvNtu').checked = false;
       document.getElementById('simTrendR9').checked = false;
-      await pushSimulation();
+      pushSimulation();
     }
 
     document.querySelectorAll('#configForm input').forEach(inp => {
@@ -649,7 +654,7 @@
     // Loop polling berurutan (anti-tumpuk / anti-lag)
     async function sensorPollLoop() {
       await fetchSensorData();
-      setTimeout(sensorPollLoop, 2000);
+      setTimeout(sensorPollLoop, 1200);
     }
 
     async function configSimPollLoop() {
