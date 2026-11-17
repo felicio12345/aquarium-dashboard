@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AquaSense Monitor — IoT Water Quality & Rule-Based System</title>
+  <title>Guppy Aqua Monitor — IoT Water Quality & Rule-Based System</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -83,15 +83,12 @@
         </div>
       </div>
 
-      <!-- DETAIL RULES DI BAWAH BOX EVAL -->
-      <div class="pt-3 border-t border-slate-800/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <div class="flex items-center gap-2 flex-wrap">
-          <span class="text-xs font-medium text-slate-400">Detail Rule Aktif:</span>
-          <div id="evalRulesContainer" class="flex items-center gap-1.5 flex-wrap">
-            <span class="mono text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">-</span>
-          </div>
+      <!-- DETAIL RULES DI BAWAH BOX EVAL (Hanya Badge Rule Aktif) -->
+      <div class="pt-3 border-t border-slate-800/90 flex items-center gap-2 flex-wrap">
+        <span class="text-xs font-medium text-slate-400">Detail Rule Aktif:</span>
+        <div id="evalRulesContainer" class="flex items-center gap-1.5 flex-wrap">
+          <span class="mono text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">-</span>
         </div>
-        <p id="evalRulesDesc" class="text-xs text-slate-400 italic"></p>
       </div>
     </section>
 
@@ -191,7 +188,6 @@
 
         <!-- Selector Pill Profil Ikan -->
         <div id="profileSelectorContainer" class="flex items-center gap-2 flex-wrap p-2.5 rounded-xl bg-slate-900/90 border border-slate-800">
-          <!-- Diisi otomatis via JS -->
         </div>
 
         <form id="configForm" onsubmit="saveActiveProfile(event)" class="space-y-4">
@@ -269,7 +265,7 @@
         </div>
 
         <div class="space-y-4">
-          <!-- Override Suhu -->
+          <!-- Override Suhu (Limit 0 - 100 °C) -->
           <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
             <div class="flex items-center justify-between">
               <label class="flex items-center gap-2 text-xs font-semibold text-slate-200 cursor-pointer">
@@ -278,12 +274,12 @@
               </label>
               <span id="simValSuhuLabel" class="mono text-xs font-bold text-sky-400">26.5 °C</span>
             </div>
-            <input type="range" id="simSliderSuhu" min="18" max="36" step="0.5" value="26.5"
+            <input type="range" id="simSliderSuhu" min="0" max="100" step="0.5" value="26.5"
               oninput="document.getElementById('simValSuhuLabel').textContent = parseFloat(this.value).toFixed(1) + ' °C'"
               onchange="pushSimulation()" class="w-full">
           </div>
 
-          <!-- Override pH -->
+          <!-- Override pH (Limit 0.0 - 14.0) -->
           <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
             <div class="flex items-center justify-between">
               <label class="flex items-center gap-2 text-xs font-semibold text-slate-200 cursor-pointer">
@@ -292,12 +288,12 @@
               </label>
               <span id="simValPhLabel" class="mono text-xs font-bold text-indigo-400">7.2</span>
             </div>
-            <input type="range" id="simSliderPh" min="4.0" max="10.0" step="0.1" value="7.2"
+            <input type="range" id="simSliderPh" min="0.0" max="14.0" step="0.1" value="7.2"
               oninput="document.getElementById('simValPhLabel').textContent = parseFloat(this.value).toFixed(1)"
               onchange="pushSimulation()" class="w-full">
           </div>
 
-          <!-- Override Turbidity (Limit 0 - 100 NTU sesuai grafik) -->
+          <!-- Override Turbidity (Limit 0 - 100 NTU) -->
           <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
             <div class="flex items-center justify-between">
               <label class="flex items-center gap-2 text-xs font-semibold text-slate-200 cursor-pointer">
@@ -329,7 +325,6 @@
     const FIREBASE_HOST = "https://aquarium-monitor-guppy-default-rtdb.asia-southeast1.firebasedatabase.app";
     const MAX_FISH_PROFILES = 5;
 
-    // 3 Preset Awal Ikan Hias (tersisa 2 slot kosong hingga maksimal 5 profil)
     const DEFAULT_FISH_PROFILES = {
       active_id: "guppy",
       list: {
@@ -363,19 +358,6 @@
       }
     };
 
-    const RULE_DESCRIPTIONS = {
-      "R1": "R1: Suhu < batas minimum",
-      "R2": "R2: Suhu normal",
-      "R3": "R3: Suhu > batas maksimum",
-      "R4": "R4: pH < batas minimum (asam)",
-      "R5": "R5: pH normal",
-      "R6": "R6: pH > batas maksimum (basa)",
-      "R7": "R7: Kekeruhan normal",
-      "R8": "R8: Kekeruhan > batas maksimal",
-      "R9": "R9: Lonjakan tren kekeruhan/jam",
-      "R10": "R10: Kombinasi >= 2 parameter abnormal"
-    };
-
     let profilesState = JSON.parse(JSON.stringify(DEFAULT_FISH_PROFILES));
     let lastUptimeMs = null;
     let lastDataTimestamp = 0;
@@ -384,12 +366,10 @@
     let isEditingSim = false;
     let simDebounceTimer = null;
 
-    // Variabel state live countdown MOSFET pH
     let livePhState = "STANDBY";
     let livePhSisaDetik = 0;
     let livePhMosfetAktif = false;
 
-    // --- INISIALISASI CHART.JS DENGAN SUMBU Y STATIS 0 - 100 (STEP 20) ---
     const ctx = document.getElementById('telemetryChart').getContext('2d');
     const telemetryChart = new Chart(ctx, {
       type: 'line',
@@ -457,7 +437,6 @@
       telemetryChart.update();
     }
 
-    // --- RENDER LIVE COUNTDOWN PH MOSFET TIAP 1 DETIK ---
     function renderMosfetCounter() {
       const mosfetBadge = document.getElementById('mosfetBadge');
       const mosfetDot = document.getElementById('mosfetDot');
@@ -492,7 +471,6 @@
       }
     }
 
-    // --- MANAJEMEN PROFILE IKAN (MAKS 5 PROFIL) ---
     function renderProfileUI() {
       const list = profilesState.list || {};
       const keys = Object.keys(list);
@@ -505,12 +483,10 @@
       const activeProf = list[profilesState.active_id];
       if (!activeProf) return;
 
-      // Update kuota & tombol Tambah/Hapus
       document.getElementById('profileQuotaBadge').textContent = `${count}/${MAX_FISH_PROFILES} Profil`;
       document.getElementById('btnAddProfile').disabled = count >= MAX_FISH_PROFILES;
       document.getElementById('btnDeleteProfile').disabled = count <= 1;
 
-      // Render tombol pilihan profil
       const container = document.getElementById('profileSelectorContainer');
       container.innerHTML = keys.map(id => {
         const p = list[id];
@@ -521,7 +497,6 @@
         return `<button type="button" onclick="selectProfile('${id}')" class="${cls}">${escapeHtml(p.nama)}</button>`;
       }).join('');
 
-      // Isi form input jika user tidak sedang mengetik
       if (!isEditingConfig) {
         document.getElementById('cfgNamaIkan').value = activeProf.nama;
         document.getElementById('cfgSuhuMin').value = activeProf.suhu_min;
@@ -532,7 +507,6 @@
         document.getElementById('cfgTrendTh').value = activeProf.trend_threshold;
       }
 
-      // Update label profil aktif di header banner & kartu sensor
       document.getElementById('activeProfileHeaderPill').textContent = `Profil: ${activeProf.nama}`;
       document.getElementById('cardFishNameSuhu').textContent = `Baku Mutu: ${activeProf.nama}`;
       document.getElementById('cardFishNamePh').textContent = `Baku Mutu: ${activeProf.nama}`;
@@ -545,14 +519,12 @@
       const activeProf = profilesState.list[profilesState.active_id];
       if (!activeProf) return;
 
-      // 1. Simpan seluruh daftar profil (maks 5) ke /profiles.json
       await fetch(`${FIREBASE_HOST}/profiles.json`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(profilesState)
       });
 
-      // 2. Salin parameter profil aktif ke /config.json agar langsung dibaca & disimpan ke NVS ESP32
       const activeConfigPayload = {
         nama_ikan: activeProf.nama,
         suhu_min: activeProf.suhu_min,
@@ -576,7 +548,6 @@
         const res = await fetch(`${FIREBASE_HOST}/profiles.json`, { cache: "no-store" });
         const data = await res.json();
 
-        // Jika di Firebase belum ada /profiles.json, inisialisasi dengan 3 preset default
         if (!data || !data.list || Object.keys(data.list).length === 0) {
           profilesState = JSON.parse(JSON.stringify(DEFAULT_FISH_PROFILES));
           renderProfileUI();
@@ -584,7 +555,6 @@
           return;
         }
 
-        // Batasi ketat maksimal 5 profil jika ada entri berlebih
         const trimmedList = {};
         Object.keys(data.list).slice(0, MAX_FISH_PROFILES).forEach(k => {
           trimmedList[k] = data.list[k];
@@ -677,7 +647,6 @@
       }[m]));
     }
 
-    // --- POLLING DATA TELEMETRI DARI FIREBASE (/sensor.json) ---
     async function fetchSensorData() {
       try {
         const res = await fetch(`${FIREBASE_HOST}/sensor.json`, { cache: "no-store" });
@@ -729,19 +698,21 @@
         document.getElementById('evalRekomendasi').textContent = cleanRekom;
         document.getElementById('lastUpdateText').textContent = new Date().toLocaleTimeString('id-ID');
 
+        // Normalisasi label lama jika ESP32 masih mengirim kata "PARAM"
+        const statusText = (data.status_ringkas || "").replace(/PARAM/gi, "KONDISI");
+
         if (data.is_abnormal) {
           banner.className = "glass-card rounded-2xl p-5 border-l-4 border-l-rose-500 transition-all space-y-4";
           badge.className = "px-2.5 py-0.5 rounded-md text-xs font-bold uppercase tracking-wider bg-rose-500/20 text-rose-300 border border-rose-500/30";
-          badge.textContent = data.status_ringkas || "ABNORMAL";
+          badge.textContent = statusText || "ABNORMAL";
         } else {
           banner.className = "glass-card rounded-2xl p-5 border-l-4 border-l-emerald-500 transition-all space-y-4";
           badge.className = "px-2.5 py-0.5 rounded-md text-xs font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
-          badge.textContent = data.status_ringkas || "SEMUA NORMAL";
+          badge.textContent = statusText || "SEMUA NORMAL";
         }
 
         const rulesRaw = (data.active_rules || "").trim();
         const rulesContainer = document.getElementById('evalRulesContainer');
-        const rulesDesc = document.getElementById('evalRulesDesc');
 
         if (rulesRaw) {
           const ruleList = rulesRaw.split(/\s+/);
@@ -752,10 +723,8 @@
               : "mono text-xs font-bold px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30";
             return `<span class="${cls}">${r}</span>`;
           }).join('');
-          rulesDesc.textContent = ruleList.map(r => RULE_DESCRIPTIONS[r] || r).join(" • ");
         } else {
           rulesContainer.innerHTML = `<span class="mono text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">-</span>`;
-          rulesDesc.textContent = "";
         }
 
         if (isEspOnline) {
@@ -819,7 +788,6 @@
       renderMosfetCounter();
     }
 
-    // --- SYNC VIRTUAL SIMULATION (/simulasi.json) ---
     async function loadSimulation() {
       if (isEditingSim) return;
       try {
@@ -832,8 +800,8 @@
         document.getElementById('simOvNtu').checked = !!sim.override_turbidity;
         document.getElementById('simTrendR9').checked = !!sim.trigger_trend_r9;
 
-        const sVal = sim.suhu ?? 26.5;
-        const pVal = sim.ph ?? 7.2;
+        const sVal = Math.min(100, Math.max(0, sim.suhu ?? 26.5));
+        const pVal = Math.min(14, Math.max(0, sim.ph ?? 7.2));
         const nVal = Math.min(100, Math.max(0, sim.turbidity ?? 12));
 
         document.getElementById('simSliderSuhu').value = sVal;
@@ -855,8 +823,8 @@
           override_suhu: document.getElementById('simOvSuhu').checked,
           override_ph: document.getElementById('simOvPh').checked,
           override_turbidity: document.getElementById('simOvNtu').checked,
-          suhu: parseFloat(document.getElementById('simSliderSuhu').value),
-          ph: parseFloat(document.getElementById('simSliderPh').value),
+          suhu: Math.min(100, Math.max(0, parseFloat(document.getElementById('simSliderSuhu').value))),
+          ph: Math.min(14, Math.max(0, parseFloat(document.getElementById('simSliderPh').value))),
           turbidity: Math.min(100, Math.max(0, parseFloat(document.getElementById('simSliderNtu').value))),
           trigger_trend_r9: document.getElementById('simTrendR9').checked
         };
@@ -884,7 +852,6 @@
       inp.addEventListener('focus', () => isEditingConfig = true);
     });
 
-    // Loop polling berurutan (anti-tumpuk / anti-lag)
     async function sensorPollLoop() {
       await fetchSensorData();
       setTimeout(sensorPollLoop, 1200);
