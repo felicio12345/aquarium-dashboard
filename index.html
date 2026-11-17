@@ -316,6 +316,7 @@
 
     let lastUptimeMs = null;
     let lastDataTimestamp = 0;
+    let isEspCurrentlyOnline = false;
     let isEditingConfig = false;
     let isEditingSim = false;
     let simDebounceTimer = null;
@@ -395,8 +396,19 @@
 
     // --- RENDER LIVE COUNTDOWN PH MOSFET TIAP 1 DETIK ---
     function renderMosfetCounter() {
+      const mosfetBadge = document.getElementById('mosfetBadge');
       const mosfetDot = document.getElementById('mosfetDot');
       const mosfetText = document.getElementById('mosfetText');
+
+      // Jika ESP32 tidak terkoneksi / offline, tampilkan status ESP32 Offline
+      if (!isEspCurrentlyOnline) {
+        mosfetBadge.className = "mono px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-500/10 border border-rose-500/30 text-rose-300 flex items-center gap-2";
+        mosfetDot.className = "w-2 h-2 rounded-full bg-rose-400";
+        mosfetText.textContent = "pH MOSFET: ESP32 Offline";
+        return;
+      }
+
+      mosfetBadge.className = "mono px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/90 border border-slate-700 text-slate-300 flex items-center gap-2";
 
       if (livePhState === "REALTIME") {
         mosfetDot.className = "w-2 h-2 rounded-full bg-emerald-400 animate-ping";
@@ -437,10 +449,8 @@
         const now = Date.now();
 
         if (lastUptimeMs === null) {
-          // Pembacaan pertama kali saat halaman dibuka: simpan nilai awal tanpa langsung mengklaim online
           lastUptimeMs = currentUptime;
         } else if (currentUptime !== lastUptimeMs) {
-          // Heartbeat berubah -> ESP32 aktif mengirim data baru
           lastUptimeMs = currentUptime;
           lastDataTimestamp = now;
         }
@@ -553,6 +563,7 @@
     }
 
     function updateEspUI(online) {
+      isEspCurrentlyOnline = online;
       const badge = document.getElementById('espBadge');
       const dot = document.getElementById('espDot');
       const text = document.getElementById('espText');
@@ -565,6 +576,7 @@
         dot.className = "w-2 h-2 rounded-full bg-rose-400";
         text.textContent = "ESP32: Offline";
       }
+      renderMosfetCounter();
     }
 
     // --- SYNC CONFIG (/config.json) ---
